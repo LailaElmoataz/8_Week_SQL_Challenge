@@ -1,0 +1,340 @@
+# Introduction
+
+... the following questions:
+1. What is the total amount each customer spent at the restaurant?
+2. How many days has each customer visited the restaurant?
+3. What was the first item from the menu purchased by each customer?
+4. What is the most purchased item on the menu and how many times was it purchased by all customers?
+5. Which item was the most popular for each customer?
+6. Which item was purchased first by the customer after they became a member?
+7. Which item was purchased just before the customer became a member?
+8. What is the total items and amount spent for each member before they became a member?
+9. If each $1 spent equates to 10 points and sushi has a 2x points multiplier - how many points would each customer have?
+10. In the first week after a customer joins the program (including their join date) they earn 2x points on all items, not just sushi - how many points do customer A and B have at the end of January?
+
+# Data
+Below is the entity relationship diagram (ERD) showing the relationships between the tables:
+![alt text](erd.png)
+
+# Analysis 
+
+### What is the total amount each customer spent at the restaurant?
+
+```sql
+SELECT 
+    customer_id, 
+    SUM(price) AS total_sales
+FROM sales
+JOIN menu
+USING(product_id)
+GROUP BY 1
+ORDER BY 2 DESC;
+```
+From the table below, we can see that customer A spent the most ($76), closely followed by customer B ($74), and cutomer C spent the least ($36). 
+|customer_id|total_sales|
+|-----------|-----------|
+|A          |76         |
+|B          |74         |
+|C          |36         |
+
+### How many days has each customer visited the restaurant?
+```sql
+SELECT 
+    customer_id, 
+    COUNT(DISTINCT order_date) AS num_visits
+FROM sales
+GROUP BY 1
+ORDER BY 2 DESC;
+```
+From the table below, we can see that customer B visited the most with 6 visits, followed by customer A with 4 visits, and customer C with 2 visits.
+|customer_id|num_visits|
+|-----------|----------|
+|B          |6         |
+|A          |4         |
+|C          |2         |
+
+### What was the first item from the menu purchased by each customer?
+```sql
+SELECT 
+    DISTINCT customer_id, 
+    product_name
+FROM sales
+JOIN menu
+USING(product_id)
+WHERE (customer_id, order_date) IN (
+    SELECT customer_id, MIN(order_date)
+    FROM sales
+    GROUP BY 1
+)
+ORDER BY 1;
+```
+The data shows that customer A's first order was curry and sushi, customer B's first order was curry, and customer C's first order was ramen.
+|customer_id|product_name|
+|-----------|------------|
+|A          |curry       |
+|A          |sushi       |
+|B          |curry       |
+|C          |ramen       |
+
+### What is the most purchased item on the menu and how many times was it purchased by all customers?
+```sql
+SELECT 
+    product_name,
+    COUNT(product_id) AS num_purchases
+FROM sales
+JOIN menu
+USING(product_id)
+GROUP BY 1
+ORDER BY 2 DESC
+LIMIT 1;
+```
+The data shows that the most popular item on the menu is ramen, purchased a total of 8 times.
+|product_name|num_purchases|
+|------------|-------------------|
+|ramen       |8                  |
+
+### Which item was the most popular for each customer?
+```sql
+WITH cust_purchases AS (
+    SELECT 
+        customer_id, 
+        product_name, 
+        COUNT(*) AS num_purchases, 
+        DENSE_RANK() OVER(PARTITION BY customer_id ORDER BY COUNT(*) DESC) AS purchases_rank
+    FROM sales
+    JOIN menu
+    USING(product_id)
+    GROUP BY 1, 2
+)
+SELECT 
+    customer_id, 
+    product_name,
+    num_purchases
+FROM cust_purchases
+WHERE purchases_rank = 1
+ORDER BY 1;
+```
+The table below shows that customers A and C have a strong preference for ramen. Customer B has a more varied taste, and enjoys all items on the menu equally.
+
+|customer_id|product_name|num_purchases|
+|-----------|------------|-------------|
+|A          |ramen       |3            |
+|B          |sushi       |2            |
+|B          |curry       |2            |
+|B          |ramen       |2            |
+|C          |ramen       |3            |
+
+### Which item was purchased first by the customer after they became a member?
+
+```sql
+WITH orders_ranks AS (
+    SELECT 
+        customer_id, 
+        product_id,
+        order_date,
+        DENSE_RANK() OVER (
+            PARTITION BY customer_id 
+            ORDER BY order_date - join_date) AS order_rank
+    FROM sales
+    JOIN members
+    USING(customer_id)
+    WHERE order_date - join_date >= 0
+)
+SELECT 
+    customer_id, 
+    product_name
+FROM orders_ranks
+JOIN menu
+USING(product_id)
+WHERE order_rank = 1
+ORDER BY 1;
+```
+Based on the table below, customer A purchased curry and customer B purchased sushi as their first item after becoming a member.
+|customer_id|product_name|
+|-----------|------------|
+|A          |curry       |
+|B          |sushi       |
+
+### Which item was purchased just before the customer became a member?
+``` sql
+WITH orders_ranks AS (
+    SELECT 
+        customer_id, 
+        product_id,
+        order_date,
+        DENSE_RANK() OVER (
+            PARTITION BY customer_id 
+            ORDER BY order_date - join_date DESC) AS order_rank
+    FROM sales
+    JOIN members
+    USING(customer_id)
+    WHERE order_date - join_date < 0
+)
+SELECT
+    customer_id, 
+    product_name
+FROM orders_ranks
+JOIN menu
+USING(product_id)
+WHERE order_rank = 1
+ORDER BY 1;
+```
+Based on the table below, customer A purchased sushi and curry before becoming a member. Customer B also purchased sushi before becoming a member.
+|customer_id|product_name|
+|-----------|------------|
+|A          |sushi       |
+|A          |curry       |
+|B          |sushi       |
+### What is the total items and amount spent for each member before they became a member?
+```sql
+SELECT 
+    s.customer_id, 
+    COUNT(s.product_id) AS num_items,
+    SUM(price) AS total_sales
+FROM sales AS s
+JOIN members AS mem
+ON s.customer_id = mem.customer_id
+AND s.order_date < mem.join_date
+JOIN menu
+USING(product_id)
+GROUP BY 1
+ORDER BY 1;
+```
+The data shows that before becoming members, customer A purchased 2 items for a total of $25, while customer B purchased 3 items for a total of $40.
+|customer_id|num_items|total_sales|
+|-----------|---------|-----------|
+|A          |2        |25         |
+|B          |3        |40         |
+
+### If each $1 spent equates to 10 points and sushi has a 2x points multiplier - how many points would each customer have?
+```sql
+WITH cust_points AS (
+    SELECT 
+        customer_id,
+        CASE WHEN product_name = 'sushi' 
+            THEN price * 20
+        ELSE price * 10 END AS points
+    FROM sales
+    JOIN menu
+    USING(product_id)
+)
+SELECT 
+    customer_id,
+    SUM(points) AS total_points
+FROM cust_points
+GROUP BY 1
+ORDER BY 2 DESC;
+```
+The table below shows that customer A would have the maximum points (940), followed by customer A (860), then customer C (360).
+|customer_id|total_points|
+|-----------|------------|
+|B          |940         |
+|A          |860         |
+|C          |360         |
+
+
+### In the first week after a customer joins the program (including their join date) they earn 2x points on all items, not just sushi - how many points do customer A and B have at the end of January?
+```sql
+WITH cust_points AS (
+    SELECT
+        s.customer_id,
+        CASE WHEN s.order_date - mem.join_date < 7 THEN price * 20
+        ELSE price * 10 END AS points
+    FROM sales AS s
+    JOIN members AS mem
+    ON s.customer_id = mem.customer_id
+    AND s.order_date >= mem.join_date
+    JOIN menu
+    USING(product_id)
+    WHERE order_date <= '2021-01-31'
+)
+SELECT 
+    customer_id,
+    SUM(points) AS total_points
+FROM cust_points
+GROUP BY 1
+ORDER BY 2 DESC;
+```
+The table below shows that customer A would have the 1020 points, while customer B would have 320 points
+|customer_id|total_points|
+|-----------|------------|
+|A          |1020        |
+|B          |320         |
+
+## Bonus Questions:
+### 1. Join All The Things
+USing joins, create a table containing all the information across all tables, including a column showing whether the customer was a member at the time of the purchase.
+```sql
+SELECT 
+    s.customer_id, 
+    s.order_date,
+    m.product_name,
+    m.price,
+    CASE WHEN mem.join_date <= s.order_date
+        THEN 'Y'
+    ELSE 'N' END AS member
+FROM sales AS s
+LEFT JOIN menu AS m
+USING(product_id)
+LEFT JOIN members AS mem
+USING(customer_id)
+ORDER BY 1, 2;
+```
+|customer_id|order_date|product_name|price|member|
+|-----------|----------|------------|-----|------|
+|A          |2021-01-01|sushi       |10   |N     |
+|A          |2021-01-01|curry       |15   |N     |
+|A          |2021-01-07|curry       |15   |Y     |
+|A          |2021-01-10|ramen       |12   |Y     |
+|A          |2021-01-11|ramen       |12   |Y     |
+|A          |2021-01-11|ramen       |12   |Y     |
+|B          |2021-01-01|curry       |15   |N     |
+|B          |2021-01-02|curry       |15   |N     |
+|B          |2021-01-04|sushi       |10   |N     |
+|B          |2021-01-11|sushi       |10   |Y     |
+|B          |2021-01-16|ramen       |12   |Y     |
+|B          |2021-02-01|ramen       |12   |Y     |
+|C          |2021-01-01|ramen       |12   |N     |
+|C          |2021-01-01|ramen       |12   |N     |
+|C          |2021-01-07|ramen       |12   |N     |
+
+### 2. Rank All The Things
+```sql
+SELECT 
+    s.customer_id, 
+    s.order_date,
+    m.product_name,
+    m.price,
+    CASE WHEN mem.join_date <= s.order_date
+        THEN 'Y'
+    ELSE 'N' END AS member,
+    CASE WHEN mem.join_date <= s.order_date
+        THEN DENSE_RANK() OVER(
+            PARTITION BY customer_id
+            ORDER BY CASE WHEN mem.join_date <= s.order_date 
+                THEN order_date END) 
+    ELSE NULL END AS ranking
+FROM sales AS s
+LEFT JOIN menu AS m
+USING(product_id)
+LEFT JOIN members AS mem
+USING(customer_id)
+ORDER BY 1, 2;
+```
+|customer_id|order_date|product_name|price|member|ranking|
+|-----------|----------|------------|-----|------|-------|
+|A          |2021-01-01|sushi       |10   |N     |       |
+|A          |2021-01-01|curry       |15   |N     |       |
+|A          |2021-01-07|curry       |15   |Y     |1      |
+|A          |2021-01-10|ramen       |12   |Y     |2      |
+|A          |2021-01-11|ramen       |12   |Y     |3      |
+|A          |2021-01-11|ramen       |12   |Y     |3      |
+|B          |2021-01-01|curry       |15   |N     |       |
+|B          |2021-01-02|curry       |15   |N     |       |
+|B          |2021-01-04|sushi       |10   |N     |       |
+|B          |2021-01-11|sushi       |10   |Y     |1      |
+|B          |2021-01-16|ramen       |12   |Y     |2      |
+|B          |2021-02-01|ramen       |12   |Y     |3      |
+|C          |2021-01-01|ramen       |12   |N     |       |
+|C          |2021-01-01|ramen       |12   |N     |       |
+|C          |2021-01-07|ramen       |12   |N     |       |
