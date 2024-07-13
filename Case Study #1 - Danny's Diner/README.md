@@ -1,22 +1,39 @@
-# Introduction
+# Case Study #1: Danny's Diner
+![alt text](image.png)
 
-... the following questions:
-1. What is the total amount each customer spent at the restaurant?
-2. How many days has each customer visited the restaurant?
-3. What was the first item from the menu purchased by each customer?
-4. What is the most purchased item on the menu and how many times was it purchased by all customers?
-5. Which item was the most popular for each customer?
-6. Which item was purchased first by the customer after they became a member?
-7. Which item was purchased just before the customer became a member?
-8. What is the total items and amount spent for each member before they became a member?
-9. If each $1 spent equates to 10 points and sushi has a 2x points multiplier - how many points would each customer have?
-10. In the first week after a customer joins the program (including their join date) they earn 2x points on all items, not just sushi - how many points do customer A and B have at the end of January?
+## Table of Contents:
+* [Introduction](#introduction)
+* [Tools](#tools)
+* [Problem Statement](#problem-statement)
+* [Dataset](#dataset)
+* [Analysis](#analysis)
 
-# Data
+## Introduction
+
+Welcome to this SQL project, which is part of [Danny Ma's 8WeekSQLChallenge](https://8weeksqlchallenge.com/)! Our objective is to use SQL to tackle eight fascinating case studies.
+
+Please note that all the information needed for the case study will be obtained from [here](https://8weeksqlchallenge.com/case-study-1/).
+
+
+## Tools
+* **PostgreSQL**: database management system to create and manage the database schema for this project.
+* **VS Code**: code editor for developing and executing SQL queries.
+* **Git & Github**: for version control, project tracking and sharing my scripts and analysis.
+
+## Problem Statement
+Danny opened a Japanese food restaurant in 2021. He wants to use the data to answer key questions about his customers visiting patterns, total expenditure, and their favorite menu items with the aim of delivering a better and more personalised experience for his loyal customers.\
+He wants to use our insights to make an informed decision regarding expanding his existing customer loyalty program. Addidtionally, he wants to create some basic datasets so his team can easily inspect the data without needing to use SQL.
+
+## Dataset
+Danny provided us with 3 datasets: sales, members and menu:
+* **sales**: Contains customer order information, including the order date and menu items ordered.
+* **menu**: Provides information on menu items and their prices.
+* **members**: Holds data on customers who joined the loyalty program, including the date they joined.
+
 Below is the entity relationship diagram (ERD) showing the relationships between the tables:
 ![alt text](erd.png)
 
-# Analysis 
+## Analysis 
 
 ### What is the total amount each customer spent at the restaurant?
 
@@ -134,11 +151,11 @@ WITH orders_ranks AS (
         order_date,
         DENSE_RANK() OVER (
             PARTITION BY customer_id 
-            ORDER BY order_date - join_date) AS order_rank
+            ORDER BY order_date) AS order_rank
     FROM sales
     JOIN members
     USING(customer_id)
-    WHERE order_date - join_date >= 0
+    WHERE order_date >= join_date
 )
 SELECT 
     customer_id, 
@@ -149,7 +166,7 @@ USING(product_id)
 WHERE order_rank = 1
 ORDER BY 1;
 ```
-Based on the table below, customer A purchased curry and customer B purchased sushi as their first item after becoming a member.
+The table below shows that customer A purchased curry and customer B purchased sushi as their first item after becoming a member.
 |customer_id|product_name|
 |-----------|------------|
 |A          |curry       |
@@ -164,11 +181,11 @@ WITH orders_ranks AS (
         order_date,
         DENSE_RANK() OVER (
             PARTITION BY customer_id 
-            ORDER BY order_date - join_date DESC) AS order_rank
+            ORDER BY order_date DESC) AS order_rank
     FROM sales
     JOIN members
     USING(customer_id)
-    WHERE order_date - join_date < 0
+    WHERE order_date < join_date
 )
 SELECT
     customer_id, 
@@ -179,7 +196,7 @@ USING(product_id)
 WHERE order_rank = 1
 ORDER BY 1;
 ```
-Based on the table below, customer A purchased sushi and curry before becoming a member. Customer B also purchased sushi before becoming a member.
+The table below shows that customer A purchased sushi and curry before becoming a member. Customer B also purchased sushi before becoming a member.
 |customer_id|product_name|
 |-----------|------------|
 |A          |sushi       |
@@ -208,20 +225,14 @@ The data shows that before becoming members, customer A purchased 2 items for a 
 
 ### If each $1 spent equates to 10 points and sushi has a 2x points multiplier - how many points would each customer have?
 ```sql
-WITH cust_points AS (
-    SELECT 
-        customer_id,
-        CASE WHEN product_name = 'sushi' 
-            THEN price * 20
-        ELSE price * 10 END AS points
-    FROM sales
-    JOIN menu
-    USING(product_id)
-)
 SELECT 
     customer_id,
-    SUM(points) AS total_points
-FROM cust_points
+    SUM(CASE WHEN product_id = 1 
+            THEN price * 20
+        ELSE price * 10 END) AS total_points
+FROM sales
+JOIN menu
+USING(product_id)
 GROUP BY 1
 ORDER BY 2 DESC;
 ```
@@ -235,27 +246,22 @@ The table below shows that customer A would have the maximum points (940), follo
 
 ### In the first week after a customer joins the program (including their join date) they earn 2x points on all items, not just sushi - how many points do customer A and B have at the end of January?
 ```sql
-WITH cust_points AS (
-    SELECT
-        s.customer_id,
-        CASE WHEN s.order_date - mem.join_date < 7 THEN price * 20
-        ELSE price * 10 END AS points
-    FROM sales AS s
-    JOIN members AS mem
-    ON s.customer_id = mem.customer_id
-    AND s.order_date >= mem.join_date
-    JOIN menu
-    USING(product_id)
-    WHERE order_date <= '2021-01-31'
-)
-SELECT 
-    customer_id,
-    SUM(points) AS total_points
-FROM cust_points
+SELECT
+    s.customer_id,
+    SUM(CASE WHEN s.order_date - mem.join_date < 7 
+            THEN price * 20
+        ELSE price * 10 END) AS total_points
+FROM sales AS s
+JOIN members AS mem
+ON s.customer_id = mem.customer_id
+AND s.order_date >= mem.join_date
+JOIN menu
+USING(product_id)
+WHERE order_date <= '2021-01-31'
 GROUP BY 1
 ORDER BY 2 DESC;
 ```
-The table below shows that customer A would have the 1020 points, while customer B would have 320 points
+The table below shows that customer A would have 1020 points, while customer B would have 320 points
 |customer_id|total_points|
 |-----------|------------|
 |A          |1020        |
@@ -263,7 +269,7 @@ The table below shows that customer A would have the 1020 points, while customer
 
 ## Bonus Questions:
 ### 1. Join All The Things
-USing joins, create a table containing all the information across all tables, including a column showing whether the customer was a member at the time of the purchase.
+Using joins, create a table containing all the information across all tables, including a column showing whether the customer was a member at the time of the purchase.
 ```sql
 SELECT 
     s.customer_id, 
@@ -338,3 +344,5 @@ ORDER BY 1, 2;
 |C          |2021-01-01|ramen       |12   |N     |       |
 |C          |2021-01-01|ramen       |12   |N     |       |
 |C          |2021-01-07|ramen       |12   |N     |       |
+
+## Thank you! 
