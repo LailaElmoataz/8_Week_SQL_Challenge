@@ -254,14 +254,21 @@ SELECT
 FROM sales AS s
 JOIN members AS mem
 ON s.customer_id = mem.customer_id
-AND s.order_date >= mem.join_date
+AND order_date >= join_date
 JOIN menu
 USING(product_id)
 WHERE order_date <= '2021-01-31'
 GROUP BY 1
 ORDER BY 2 DESC;
 ```
-The table below shows that customer A would have 1020 points, while customer B would have 320 points
+**Assumptions:**
+1. Loyalty program rewards points only for purchases made **after** customers join. Orders placed before joining the program will be excluded.
+2. During their first week as members, they earn double points (20 points per $1 spent) on all items.
+3. After the first week of membership and until the end of January, members earn the standard rate of 10 points per $1 spent on all items.
+<br><br>
+
+The table below shows that customer A would have 1020 points, while customer B would have 320 points.
+
 |customer_id|total_points|
 |-----------|------------|
 |A          |1020        |
@@ -269,7 +276,7 @@ The table below shows that customer A would have 1020 points, while customer B w
 
 ## Bonus Questions:
 ### 1. Join All The Things
-Using joins, create a table containing all the information across all tables, including a column showing whether the customer was a member at the time of the purchase.
+Danny wants us to create a table containing all the information across all tables, including a column showing whether the customer was a member at the time of the purchase.
 ```sql
 SELECT 
     s.customer_id, 
@@ -305,6 +312,7 @@ ORDER BY 1, 2;
 |C          |2021-01-07|ramen       |12   |N     |
 
 ### 2. Rank All The Things
+Danny also requires us to add a column to rank customer purchases based on order date. He wants member-only purchases to be ranked so he expects null ranking values for the records when customers are not yet part of the loyalty program.
 ```sql
 SELECT 
     s.customer_id, 
@@ -314,12 +322,12 @@ SELECT
     CASE WHEN mem.join_date <= s.order_date
         THEN 'Y'
     ELSE 'N' END AS member,
-    CASE WHEN mem.join_date <= s.order_date
-        THEN DENSE_RANK() OVER(
+    CASE WHEN s.order_date >= mem.join_date
+        THEN DENSE_RANK() OVER (
             PARTITION BY customer_id
-            ORDER BY CASE WHEN mem.join_date <= s.order_date 
-                THEN order_date END) 
-    ELSE NULL END AS ranking
+            ORDER BY CASE WHEN s.order_date >= mem.join_date
+                THEN order_date END
+  ) END AS ranking
 FROM sales AS s
 LEFT JOIN menu AS m
 USING(product_id)
